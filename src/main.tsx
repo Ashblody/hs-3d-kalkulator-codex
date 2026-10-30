@@ -58,7 +58,15 @@ import {
   type Project,
   type Result,
 } from './model';
-import { read, save, download, validate, recover } from './storage';
+import {
+  read,
+  save,
+  download,
+  validate,
+  recover,
+  replaceFromJson,
+  exportData,
+} from './storage';
 import './style.css';
 import { MaterialCatalog } from './MaterialCatalog';
 import { ModelSales, newModelSale } from './ModelSales';
@@ -280,7 +288,7 @@ function App() {
   };
   const backup = () =>
     download(
-      data,
+      exportData(data),
       `HS-3D-varnostna-kopija-${new Date().toISOString().slice(0, 10)}.json`,
     );
   async function restore(file?: File) {
@@ -290,8 +298,10 @@ function App() {
       return;
     }
     try {
-      const next = validate(JSON.parse(await file.text()));
+      const json = await file.text();
+      validate(JSON.parse(json));
       download(data, 'HS-3D-pred-obnovo.json');
+      const next = replaceFromJson(json);
       setBlocked(false);
       setData(next);
       setNotice('Podatki so obnovljeni. Predhodno stanje je preneseno.');

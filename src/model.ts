@@ -202,6 +202,14 @@ export const projectSchema = z.object({
 export type Project = z.infer<typeof projectSchema>;
 export const backupSchema = z.object({
   version: z.literal(1),
+  sync: z
+    .object({
+      schemaVersion: z.literal(1),
+      revisionId: z.string().uuid(),
+      baseRevisionId: z.string().uuid().nullable(),
+      deviceId: z.string().uuid(),
+    })
+    .optional(),
   settings: settingsSchema,
   projects: z.array(projectSchema).max(5000),
   draft: orderSchema,

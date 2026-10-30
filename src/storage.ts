@@ -1,5 +1,7 @@
 import { backupSchema, defaults, demo, type Backup } from './model';
-const KEY = 'hs3d.v1';
+export const KEY = 'hs3d.v1';
+export const RECOVERY_PREFIX = 'hs3d.recovery.';
+const DEVICE_KEY = 'hs3d.deviceId';
 export function initial(): Backup {
   const d = demo();
   return {
@@ -60,8 +62,94 @@ export function validate(value: unknown): Backup {
     throw Error('Podvojeni projekti.');
   return b;
 }
-export function save(data: Backup) {
-  localStorage.setItem(KEY, JSON.stringify(data));
+function deviceId(): string {
+  const existing = localStorage.getItem(DEVICE_KEY);
+  if (existing) return existing;
+  const id = crypto.randomUUID();
+  localStorage.setItem(DEVICE_KEY, id);
+  return id;
+}
+
+function content(data: Backup) {
+  const { sync: _sync, ...payload } = data;
+  return JSON.stringify(payload);
+}
+
+// Preserve exact bytes, including corrupt data, before any replacement.
+function preserve(raw: string): string {
+  const key = RECOVERY_PREFIX + crypto.randomUUID();
+  localStorage.setItem(key, raw);
+  if (localStorage.getItem(key) !== raw)
+    throw Error('Varnostna kopija ni potrjena.');
+  return key;
+}
+
+export function save(data: Backup): Backup {
+  const next = validate(data);
+  const raw = localStorage.getItem(KEY);
+  const previous = raw === null ? null : validate(JSON.parse(raw));
+  if (previous?.sync && content(previous) === content(next)) return previous;
+  const id = deviceId();
+  const result: Backup = {
+    ...next,
+    sync: {
+      schemaVersion: 1,
+      revisionId: crypto.randomUUID(),
+      baseRevisionId: previous?.sync?.revisionId ?? null,
+      deviceId: id,
+    },
+  };
+  if (raw !== null) preserve(raw);
+  localStorage.setItem(KEY, JSON.stringify(result));
+  return result;
+}
+
+// Validate and persist before React state changes. Failed backup/storage leaves
+// the current data intact; recovery records are never deleted automatically.
+export function replaceFromJson(json: string): Backup {
+  const next = validate(JSON.parse(json));
+  const raw = localStorage.getItem(KEY);
+  const id = deviceId();
+  const result: Backup = {
+    ...next,
+    sync: {
+      schemaVersion: 1,
+      revisionId: crypto.randomUUID(),
+      baseRevisionId: next.sync?.revisionId ?? null,
+      deviceId: id,
+    },
+  };
+  if (raw !== null) preserve(raw);
+  localStorage.setItem(KEY, JSON.stringify(result));
+  return result;
+}
+
+export function restoreRecovery(key: string): Backup {
+  if (!key.startsWith(RECOVERY_PREFIX)) throw Error('Neveljavna kopija.');
+  const raw = localStorage.getItem(key);
+  if (raw === null) throw Error('Kopija ne obstaja.');
+  return replaceFromJson(raw);
+}
+
+export function recoveryKeys(): string[] {
+  return Array.from({ length: localStorage.length }, (_, i) =>
+    localStorage.key(i),
+  ).filter(
+    (key): key is string => key !== null && key.startsWith(RECOVERY_PREFIX),
+  );
+}
+
+export function exportData(data: Backup): Backup {
+  const raw = localStorage.getItem(KEY);
+  if (raw !== null) {
+    try {
+      const saved = validate(JSON.parse(raw));
+      if (content(saved) === content(validate(data))) return saved;
+    } catch {
+      // Keep manual export available even when the persisted record is corrupt.
+    }
+  }
+  return validate(data);
 }
 export function download(data: unknown, filename: string) {
   const blob = new Blob(
