@@ -18,13 +18,19 @@ export function initial(): Backup {
     draftSettings: structuredClone(defaults),
   };
 }
-export function read(): { data: Backup; error: string } {
+export function read(): { data: Backup; error: string; raw: string | null } {
+  let raw: string | null = null;
   try {
-    const raw = localStorage.getItem(KEY);
-    return { data: raw ? validate(JSON.parse(raw)) : initial(), error: '' };
+    raw = localStorage.getItem(KEY);
+    return {
+      data: raw ? validate(JSON.parse(raw)) : initial(),
+      error: '',
+      raw,
+    };
   } catch {
     return {
       data: initial(),
+      raw,
       error:
         'Shranjenih podatkov ni bilo mogoče prebrati. Izvirnik je ostal v brskalniku; najprej ga prenesite z gumbom »Reši podatke«.',
     };
@@ -84,9 +90,13 @@ function preserve(raw: string): string {
   return key;
 }
 
-export function save(data: Backup): Backup {
+export function save(data: Backup, expectedRaw?: string | null): Backup {
   const next = validate(data);
   const raw = localStorage.getItem(KEY);
+  if (expectedRaw !== undefined && raw !== expectedRaw)
+    throw Error(
+      'Podatki so se spremenili v drugem zavihku. Najprej prenesite lokalno kopijo in znova naložite aplikacijo.',
+    );
   const previous = raw === null ? null : validate(JSON.parse(raw));
   if (previous?.sync && content(previous) === content(next)) return previous;
   const id = deviceId();
@@ -165,4 +175,20 @@ export function download(data: unknown, filename: string) {
 }
 export function recover() {
   download(localStorage.getItem(KEY) ?? '{}', 'hs3d-izvirni-podatki.json');
+}
+
+// Drive adoption keeps the remote revision ID. The caller must first resolve
+// conflicts. Compare exact local bytes immediately before the synchronous write.
+export function adoptDriveRevision(
+  data: Backup,
+  expectedRaw: string | null,
+): Backup {
+  const next = validate(data);
+  if (!next.sync) throw Error('Različica nima metapodatkov.');
+  const raw = localStorage.getItem(KEY);
+  if (raw !== expectedRaw)
+    throw Error('Lokalni podatki so se spremenili. Ponovite sinhronizacijo.');
+  if (raw !== null) preserve(raw);
+  localStorage.setItem(KEY, JSON.stringify(next));
+  return next;
 }

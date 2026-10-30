@@ -178,3 +178,16 @@ Na podlagi pregleda uporabnikove druge različice kalkulatorja so dodani:
 - V poslovnem pregledu je ločen scenarij aktivnega dela z nastavljivo prodajno uro. Prihodki = načrtovane ure × postavka; odštejejo se mesečni fiksni stroški in ročno nastavljena davčna rezerva. Scenarij ne vključuje prihodkov ali stroškov tiska in ne šteje med dejanske projekte. Potrebna urna postavka za cilj = (cilj + fiksni stroški / ure) / (1 − davčna rezerva / 100). Pri 100 % rezervi cilj ni dosegljiv.
 
 Začetni scenarij 18 €/h je predpostavka za primerjavo, ne sprememba cenika ali shranjenih ponudb. Pregled idej je bil izveden na repozitoriju https://github.com/Ashblody/hs-3d-kalkulator; ta izvorna različica je ostala nespremenjena.
+
+## Google Drive — ročna sinhronizacija
+
+V Nastavitvah je pripravljena izbirna povezava prek Google Identity Services in
+Drive API (`drive.file`). Vsaka različica se shrani v svojo JSON-datoteko; ob
+nepregledanih različicah aplikacija zahteva izbiro. Lokalni podatki se ob povezavi
+ne zamenjajo. Pred prevzemom ostaneta obnovljiva lokalna kopija in kopija na Drivu.
+Žeton je samo v pomnilniku; delo brez povezave ter ročni JSON izvoz/uvoz ostajata.
+
+Nastavite javni `VITE_GOOGLE_CLIENT_ID` v `.env.local` za lokalni razvoj oziroma
+kot GitHub Actions repository variable za prihodnjo gradnjo. Client Secret ni
+potreben in ne sme biti v kodi. Brez Client ID-ja kalkulator deluje brez povezave
+z Googlom. [Natančna navodila in varen preizkus](docs/google-drive-setup.md).

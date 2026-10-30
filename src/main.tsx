@@ -1,5 +1,7 @@
+import { withLocalWriteLock } from './drive-sync';
+import { DrivePanel } from './DrivePanel';
 import { Num, Text, Select, Toggle, Card, options } from './ui';
-import React, { useState, useEffect, type ReactNode } from 'react';
+import React, { useState, useEffect, useRef, type ReactNode } from 'react';
 import { createRoot } from 'react-dom/client';
 import {
   Calculator,
@@ -66,6 +68,7 @@ import {
   recover,
   replaceFromJson,
   exportData,
+  KEY,
 } from './storage';
 import './style.css';
 import { MaterialCatalog } from './MaterialCatalog';
@@ -177,6 +180,7 @@ function Charts({ r }: { r: Result }) {
 
 function App() {
   const [loaded] = useState(read);
+  const persistedRaw = useRef(loaded.raw);
   const [data, setData] = useState(loaded.data);
   const [error, setError] = useState(loaded.error);
   const [blocked, setBlocked] = useState(!!loaded.error);
@@ -204,14 +208,21 @@ function App() {
   }, [dark]);
   useEffect(() => {
     if (blocked) return;
-    try {
-      save(data);
+    let cancelled = false;
+    withLocalWriteLock(() => {
+      if (cancelled) return;
+      save(data, persistedRaw.current);
+      persistedRaw.current = localStorage.getItem(KEY);
       setError('');
-    } catch {
-      setError(
-        'Data ni bilo mogoče shraniti. Prostor brskalnika je poln ali nedostopen. Prenesite varnostno kopijo.',
-      );
-    }
+    }).catch(() => {
+      if (!cancelled)
+        setError(
+          'Podatkov ni bilo mogoče shraniti. Shramba ni dostopna, je polna ali jo je spremenil drug zavihek. Prenesite JSON-kopijo trenutnih podatkov pred ponovnim nalaganjem.',
+        );
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [data, blocked]);
   useEffect(() => {
     const off = () => setOnline(false),
@@ -300,11 +311,14 @@ function App() {
     try {
       const json = await file.text();
       validate(JSON.parse(json));
-      download(data, 'HS-3D-pred-obnovo.json');
-      const next = replaceFromJson(json);
-      setBlocked(false);
-      setData(next);
-      setNotice('Podatki so obnovljeni. Predhodno stanje je preneseno.');
+      await withLocalWriteLock(() => {
+        download(data, 'HS-3D-pred-obnovo.json');
+        const next = replaceFromJson(json);
+        persistedRaw.current = localStorage.getItem(KEY);
+        setBlocked(false);
+        setData(next);
+        setNotice('Podatki so obnovljeni. Predhodno stanje je preneseno.');
+      });
     } catch {
       setNotice(
         'Obnova ni uspela. Preverite veljavno varnostno kopijo HS 3D (različica 1).',
@@ -1337,17 +1351,36 @@ function App() {
               />
             )}
             {tab === 'Nastavitve' && (
-              <SettingsEditor
-                settings={data.settings}
-                onSave={(settings) => {
-                  setData((d) => ({ ...d, settings }));
-                  setNotice(
-                    'Nastavitve so shranjene. Novi projekti uporabijo novi cenik.',
-                  );
-                }}
-                backup={backup}
-                restore={restore}
-              />
+              <>
+                <DrivePanel
+                  data={data}
+                  blocked={blocked || !!error}
+                  capture={() =>
+                    withLocalWriteLock(() => {
+                      const snapshot = save(data, persistedRaw.current);
+                      persistedRaw.current = localStorage.getItem(KEY);
+                      return { snapshot, raw: persistedRaw.current };
+                    })
+                  }
+                  onAdopt={(next) => {
+                    persistedRaw.current = localStorage.getItem(KEY);
+                    setData(next);
+                    setBlocked(false);
+                    setError('');
+                  }}
+                />
+                <SettingsEditor
+                  settings={data.settings}
+                  onSave={(settings) => {
+                    setData((d) => ({ ...d, settings }));
+                    setNotice(
+                      'Nastavitve so shranjene. Novi projekti uporabijo novi cenik.',
+                    );
+                  }}
+                  backup={backup}
+                  restore={restore}
+                />
+              </>
             )}
             {tab === 'Materiali in nabava' && (
               <MaterialCatalog
@@ -1841,8 +1874,9 @@ function SettingsEditor({
       </Card>
       <Card title="Varnostne kopije">
         <p className="muted">
-          Podatki so shranjeni samo v tem brskalniku. Redno prenesite kopijo, še
-          posebej pred menjavo naprave ali brisanjem podatkov brskalnika.
+          Podatki so shranjeni v tem brskalniku; na Drive se prenesejo samo ob
+          ročni sinhronizaciji. Redno prenesite kopijo, še posebej pred menjavo
+          naprave ali brisanjem podatkov brskalnika.
         </p>
         <div className="backup-actions">
           <button className="button" onClick={backup}>
